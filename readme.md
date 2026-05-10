@@ -39,7 +39,6 @@ Partially mapped:
 
 Not currently supported:
 
-- Automatic discovery-to-pairing workflow without a known device ID
 - Reliable electronic pairing ACK detection
 - Full native effect mapping
 - Standard Bluetooth Mesh / brLight devices
