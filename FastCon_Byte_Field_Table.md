@@ -251,3 +251,68 @@ Known only at packet-family level:
 | Remaining bytes | Effect payload | Unknown |
 
 Native rainbow fields are not decoded yet. Current reliable approach is ESP-side simulated rainbow using repeated RGB commands.
+
+
+---
+
+## Public-Source Additions / Cross-Checks
+
+These rows come from public reverse-engineering projects and community notes. They mostly confirm behavior and implementation constraints rather than adding fully decoded byte offsets.
+
+| Area | Public Source Finding | How It Affects This Table | Confidence |
+|---|---|---|---|
+| Protocol family | brMesh / Broadlink BLE lights are based on the Broadlink FastCon protocol | Confirms naming and that this is not standard BLE Mesh | Strong |
+| Not brLight | `brLight` can look similar in the app UI, but is a different protocol and advertises as full BLE Mesh | Add a compatibility warning: this table applies to FastCon / brMesh, not brLight | Strong |
+| ESP32 support | Public ESPHome component targets ESP32 and controls FastCon/brMesh lights | Confirms ESP32 BLE advertisement approach is practical | Strong |
+| Supported features | Public ESPHome component lists On/Off, Brightness, RGB color, and White mode | Confirms our command classes cover the same practical feature set | Strong |
+| Mesh key config | ESPHome FastCon component uses a required `mesh_key` in hex format | Confirms mesh-key-based control model | Strong |
+| Advertisement timing | ESPHome FastCon config exposes `adv_interval_min`, `adv_interval_max`, `adv_duration`, `adv_gap`, and queue size | Add implementation fields for reliability/tuning, not byte fields | Strong |
+| Dropped commands / transitions | Community notes mention command queueing and dropped messages when many transitional commands are sent | Supports debouncing Zigbee color/level bursts before sending FastCon commands | Strong |
+| Pairing flow | BRmesh ESP32 MQTT project says: turn lights off, start ESP, turn lights on, ESP sends alive/wake, receives response, sends new key, lights respond | Confirms our observed pairing window and repeated provision-loop behavior | Strong |
+| Pairing flakiness | Public project notes adding lights can be flaky and BLE advertising timing may need adjustment | Supports 15-second retry loop and configurable advertisement timing | Strong |
+| App-first mesh key | brMeshMQTT notes first device added by Android app generates a unique mesh key and later devices use it | Confirms app-created mesh-key model | Strong |
+| QR code key extraction | HA community thread provides AES-CBC constants for decrypting BRMesh QR export into mesh key + devices | Potential future import path for saved mesh key/device list | Medium/strong |
+| White mode | ESPHome component claims White mode support, and community notes discuss RGBW/CCT behavior issues | Confirms native white mode likely exists, but byte fields remain incomplete | Medium |
+| Group control | Community reports group control may act serially and miss commands with multiple lights | Supports queue/gap tuning and suggests group/broadcast behavior needs mapping | Medium |
+| Native effects | ESPHome light framework supports effects generally, but FastCon native effects are not documented in public sources found | Keep rainbow/native effect bytes as observed-only until more captures are decoded | Weak |
+
+---
+
+## Implementation Parameters Worth Tracking
+
+These are not protocol byte fields, but public FastCon implementations expose or discuss them and they matter for reliability.
+
+| Parameter | Example / Default | Meaning | Source Use |
+|---|---|---|---|
+| `mesh_key` | `"31343832"` / `"32393037"` | Active 4-byte mesh key in hex | Required by ESPHome FastCon component |
+| `adv_duration` | `50 ms`, community example `15 ms` | How long each command advertisement burst runs | Tuning reliability / speed |
+| `adv_gap` | `10 ms`, community example `2 ms` | Gap between advertisement bursts | Tuning reliability / speed |
+| `adv_interval_min` | `0x20`, community example `0x06` | BLE advertisement minimum interval | Tuning reliability / speed |
+| `adv_interval_max` | `0x40`, community example `0x08` | BLE advertisement maximum interval | Tuning reliability / speed |
+| `max_queue_size` | `100`, community example `16` | Command queue depth | Prevents flooding / dropped commands |
+| transition suppression | `default_transition_length: 0s` | Avoids many intermediate color/brightness packets | Recommended by community users for reliability |
+| pairing retry window | 10–15 seconds practical | Bulb only accepts provisioning immediately after power-on/reset | Confirmed by our tests and public auto-add flow |
+
+---
+
+## Compatibility Warning
+
+| Device/App Type | Compatibility With This Table | Notes |
+|---|---|---|
+| brMesh app lights | Yes | Broadlink FastCon / brMesh family |
+| BroadLink BLE mobile app lights | Likely yes | If they use FastCon/brMesh protocol |
+| brLight app lights | No | Similar-looking UI, different underlying BLE Mesh protocol |
+| Standard Bluetooth Mesh bulbs | No | Not FastCon/brMesh |
+| Broadlink GW4C hub path | Different integration path | Can bridge BLE to cloud/Alexa/Google, but not this local ESP packet format |
+
+---
+
+## Public-Source-Backed To-Do Items
+
+| To-Do | Why |
+|---|---|
+| Add configurable `adv_duration`, `adv_gap`, `adv_interval_min`, and `adv_interval_max` to `FastConBridge` | Public ESPHome users report advertisement timing impacts speed/reliability |
+| Keep a command queue but avoid huge transitional bursts | Community reports too many transition packets cause flicker/wrong end states |
+| Add optional QR import/decode utility later | Public thread shows BRMesh QR export can expose mesh key and devices |
+| Keep white/CCT as its own mapping target | Public implementations support White mode, and our bytes `[6]` / `[7]` support that direction |
+| Keep native effects separate from RGB proxy effects | No public byte-field mapping found for native rainbow/effects |
